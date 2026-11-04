@@ -14,7 +14,8 @@ No Athena workgroup, listed Secrets Manager secret, SSM parameter or SQS queue c
 remains in either region. A secret scheduled for deletion counts as removed.
 """
 criteria_descriptions = [
-  "the seed state is readable and contains the environment prefix",
+  "the seed state is readable and contains the environment prefix; if not, the run is an evaluation error",
+  "every listing call succeeds; a failed call is an evaluation error, not an empty listing",
   "no Athena workgroup whose name contains the prefix is listed in either region",
   "no Secrets Manager secret whose name contains the prefix is listed in either region (secrets pending deletion are not listed)",
   "no SSM parameter whose name contains the prefix or a `/7c21/` path segment is listed in either region",

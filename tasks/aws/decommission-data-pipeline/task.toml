@@ -15,7 +15,8 @@ remains in either region. Tables and streams that are already deleting count as 
 instruction also says not to touch anything outside the adt- prefix, but only the removal is graded.
 """
 criteria_descriptions = [
-  "the seed state is readable and contains the pipeline's name prefix",
+  "the seed state is readable and contains the pipeline's name prefix; if not, the run is an evaluation error",
+  "every listing and describe call succeeds; only a not-found describe of a listed table or stream counts as removed, and any other failed call is an evaluation error",
   "no DynamoDB table whose name contains the prefix is still ACTIVE in either region",
   "no Kinesis stream whose name contains the prefix is still ACTIVE in either region",
   "no ECR repository whose name contains the prefix exists in either region",

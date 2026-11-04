@@ -14,7 +14,8 @@ No EventBridge rule, SQS queue or SNS topic carrying the aeb-<region> prefix rem
 region. A cleanup limited to the home region, or one that skips EventBridge rules, fails.
 """
 criteria_descriptions = [
-  "the seed state file written by setup is readable and contains the workload prefix",
+  "the seed state file written by setup is readable and contains the workload prefix; if not, the run is an evaluation error",
+  "every listing call succeeds; a failed call is an evaluation error, not an empty listing",
   "no EventBridge rule with the prefix in its name remains in either region",
   "no SQS queue whose name starts with the prefix remains in either region",
   "no SNS topic with the prefix in its ARN remains in either region",

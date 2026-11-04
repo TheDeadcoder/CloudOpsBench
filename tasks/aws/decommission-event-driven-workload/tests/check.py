@@ -2,7 +2,8 @@
 """Check that the aeb-<region> stack is fully decommissioned.
 
 Passes when no EventBridge rule, SQS queue or SNS topic carrying the prefix remains
-in either region recorded in seed_state.json.
+in either region recorded in seed_state.json. A read that fails raises, so it is never
+taken as an empty listing.
 """
 import json
 import subprocess
@@ -13,13 +14,10 @@ def aws(args, region=None):
     cmd = ["aws", *args, "--output", "json"]
     if region:
         cmd += ["--region", region]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if r.returncode != 0:
-            return None
-        return json.loads(r.stdout) if r.stdout.strip() else None
-    except Exception:
-        return None
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        raise RuntimeError(f"{' '.join(cmd)} failed: {r.stderr.strip()[:300]}")
+    return json.loads(r.stdout) if r.stdout.strip() else None
 
 
 def fail(msg):
@@ -27,14 +25,12 @@ def fail(msg):
     sys.exit(1)
 
 
-try:
-    p = json.load(open("seed_state.json"))
-except Exception as e:
-    fail(f"seed_state.json unreadable ({e}) — setup did not run")
+with open("seed_state.json") as f:
+    p = json.load(f)
 
 prefix = p.get("prefix")
 if not prefix:
-    fail("ground-truth prefix missing from seed_state.json")
+    raise RuntimeError("ground-truth prefix missing from seed_state.json")
 regions = [p.get("primary_region", "us-east-1"), p.get("secondary_region", "us-west-2")]
 
 remaining = []

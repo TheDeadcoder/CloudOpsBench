@@ -3,39 +3,42 @@
 
 Passes when no DynamoDB table, Kinesis stream, ECR repository or SQS queue carrying
 the per-run prefix remains in either region recorded in seed_state.json. Tables and
-streams delete asynchronously, so any status other than ACTIVE counts as gone.
+streams delete asynchronously, so any status other than ACTIVE counts as gone. A read
+that fails raises, so it is never taken as an empty listing or a deletion.
 """
 import json
 import subprocess
 import sys
 
 
-def aws(args, region=None):
+def aws(args, region=None, missing=None):
+    """Run a read; an error naming the `missing` code returns None, any other error raises."""
     cmd = ["aws", *args, "--output", "json"]
     if region:
         cmd += ["--region", region]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if r.returncode != 0:
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        if missing and f"({missing})" in r.stderr:
             return None
-        return json.loads(r.stdout) if r.stdout.strip() else None
-    except Exception:
-        return None
+        raise RuntimeError(f"{' '.join(cmd)} failed: {r.stderr.strip()[:300]}")
+    return json.loads(r.stdout) if r.stdout.strip() else None
 
 
 def table_gone(name, region):
     """A DynamoDB table counts as gone if absent or no longer ACTIVE (e.g. DELETING)."""
-    d = aws(["dynamodb", "describe-table", "--table-name", name], region)
+    d = aws(["dynamodb", "describe-table", "--table-name", name], region,
+            missing="ResourceNotFoundException")
     if not d:
-        return True  # not-found / error -> gone
+        return True
     return (d.get("Table", {}) or {}).get("TableStatus", "") != "ACTIVE"
 
 
 def stream_gone(name, region):
     """A Kinesis stream counts as gone if absent or no longer ACTIVE (e.g. DELETING)."""
-    d = aws(["kinesis", "describe-stream-summary", "--stream-name", name], region)
+    d = aws(["kinesis", "describe-stream-summary", "--stream-name", name], region,
+            missing="ResourceNotFoundException")
     if not d:
-        return True  # not-found / error -> gone
+        return True
     return (d.get("StreamDescriptionSummary", {}) or {}).get("StreamStatus", "") != "ACTIVE"
 
 
@@ -44,14 +47,12 @@ def fail(msg):
     sys.exit(1)
 
 
-try:
-    p = json.load(open("seed_state.json"))
-except Exception as e:
-    fail(f"seed_state.json unreadable ({e}) — setup did not run")
+with open("seed_state.json") as f:
+    p = json.load(f)
 
 prefix = p.get("prefix")
 if not prefix:
-    fail("prefix missing from seed_state.json — setup did not run")
+    raise RuntimeError("prefix missing from seed_state.json — setup did not finish")
 regions = [p.get("primary_region", "us-east-1"), p.get("secondary_region", "us-west-2")]
 
 remaining = []
