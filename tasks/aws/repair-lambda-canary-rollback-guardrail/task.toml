@@ -20,7 +20,7 @@ alarms, and the function and role carry the SecurityProfile tag. The function, i
 configuration, both versions, the alias, the CodeDeploy application and group, both roles and the
 ownership tags are the original seeded resources."""
 criteria_descriptions = [
-  "the task context file is present and readable",
+  "the seeded identities come from the private task_context.json, not the agent workspace copy; if that file is missing, the run is an evaluation error",
   "the function's runtime, handler, timeout, memory size, description and environment variables match the seeded configuration",
   "the function ARN and code hash are unchanged",
   "the live alias keeps its seeded ARN, targets the stable version and has no additional version weights",

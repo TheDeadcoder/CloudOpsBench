@@ -4,17 +4,17 @@
 Passes when the live alias targets only the stable version, the deployment group uses
 the required canary config with rollback on failure and on the seeded alarm, the alarm
 and CodeDeploy role are scoped to the live alias, and seeded resources and tags are intact.
+Seeded identities come from the private task_context.json in the grader's working
+directory, never from the copy in the agent workspace.
 """
-import json, os, sys, urllib.parse
+import json, sys, urllib.parse
 import boto3
 from botocore.exceptions import ClientError
 
 errors=[]
 def fail(x): errors.append(x)
 def load():
-    for p in [os.path.join(os.environ.get("AGENT_WORKSPACE",""),"task_context.json"),"task_context.json"]:
-        if p and os.path.isfile(p): return json.load(open(p))
-    raise SystemExit("CHECK FAILED\n1. task_context.json not found")
+    with open("task_context.json") as f: return json.load(f)
 c=load(); r=c["region"]
 la=boto3.client("lambda",region_name=r); cd=boto3.client("codedeploy",region_name=r); cw=boto3.client("cloudwatch",region_name=r); iam=boto3.client("iam",region_name=r)
 
