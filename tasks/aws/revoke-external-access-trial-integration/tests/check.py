@@ -3,13 +3,19 @@
 Passes when neither the seeded Serverless Application Repository application policy nor
 the seeded SNS topic policy has an unconditioned Allow statement for principal "*".
 The application policy is read with get-application-policy; get-application does not
-return it.
+return it. A deleted resource counts as not shared; any other read error raises.
 """
 import json
 import boto3
+from botocore.exceptions import ClientError
 import checkkit as ck
 
+NOT_FOUND = {"NotFound", "NotFoundException"}
+
 seed = ck.seed()
+app_id, topic_arn = seed.get("sar_app_id"), seed.get("sns_topic_arn")
+if not app_id or not topic_arn:
+    raise RuntimeError("seed_state.json lacks the seeded SNS topic or SAR application")
 REGION = seed["region"]
 sns_client = boto3.client("sns", region_name=REGION)
 sar_client = boto3.client("serverlessrepo", region_name=REGION)
@@ -43,22 +49,20 @@ def _is_public(statements):
 exposed = []
 
 try:
-    app_id = seed.get("sar_app_id")
-    if app_id:
-        stmts = sar_client.get_application_policy(ApplicationId=app_id).get("Statements", [])
-        if _is_public(stmts):
-            exposed.append("SAR application " + app_id.split("/")[-1])
-except Exception:
-    pass
+    stmts = sar_client.get_application_policy(ApplicationId=app_id).get("Statements", [])
+    if _is_public(stmts):
+        exposed.append("SAR application " + app_id.split("/")[-1])
+except ClientError as e:
+    if e.response.get("Error", {}).get("Code") not in NOT_FOUND:
+        raise
 
 try:
-    topic_arn = seed.get("sns_topic_arn")
-    if topic_arn:
-        doc = sns_client.get_topic_attributes(TopicArn=topic_arn)["Attributes"].get("Policy")
-        if doc and _is_public(json.loads(doc).get("Statement", [])):
-            exposed.append("SNS topic " + topic_arn.split(":")[-1])
-except Exception:
-    pass
+    doc = sns_client.get_topic_attributes(TopicArn=topic_arn)["Attributes"].get("Policy")
+    if doc and _is_public(json.loads(doc).get("Statement", [])):
+        exposed.append("SNS topic " + topic_arn.split(":")[-1])
+except ClientError as e:
+    if e.response.get("Error", {}).get("Code") not in NOT_FOUND:
+        raise
 
 ck.require(
     not exposed,

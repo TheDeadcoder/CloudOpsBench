@@ -15,8 +15,10 @@ statement for the wildcard principal without a condition. Fixing only the SNS to
 the application publicly deployable and fails.
 """
 criteria_descriptions = [
-  "the seeded Serverless Application Repository application's policy has no unconditioned Allow for the wildcard principal, or the policy can no longer be read",
-  "the seeded SNS topic's policy has no unconditioned Allow for the wildcard principal, or the topic's attributes can no longer be read",
+  "the seed state names both the SNS topic and the Serverless Application Repository application; if not, the run is an evaluation error",
+  "the seeded Serverless Application Repository application's policy has no unconditioned Allow for the wildcard principal; a deleted application counts as not shared",
+  "the seeded SNS topic's policy has no unconditioned Allow for the wildcard principal; a deleted topic counts as not shared",
+  "any other error reading either policy is an evaluation error",
 ]
 keywords = ["aws", "sns", "serverlessrepo", "security", "least-privilege"]
 extra_tools = []

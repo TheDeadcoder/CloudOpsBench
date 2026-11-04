@@ -3,12 +3,19 @@
 Passes when neither the SNS topic policy nor the Serverless Application Repository
 application policy has an Allow statement for principal "*" without a Condition. The
 application policy is read with get_application_policy; get_application does not return it.
+A deleted resource counts as not shared; any other read error raises.
 """
 import json
 import boto3
+from botocore.exceptions import ClientError
 import checkkit as ck
 
+NOT_FOUND = {"NotFound", "NotFoundException"}
+
 seed = ck.seed()
+app_id, topic = seed.get("sar_app_id"), seed.get("sns_topic_arn")
+if not app_id or not topic:
+    raise RuntimeError("seed_state.json lacks the seeded SNS topic or SAR application")
 region = seed["region"]
 sns = boto3.client("sns", region_name=region)
 sar = boto3.client("serverlessrepo", region_name=region)
@@ -35,23 +42,21 @@ def _is_public(statements):
 
 exposed = []
 
-app_id = seed.get("sar_app_id")
-if app_id:
-    try:
-        stmts = sar.get_application_policy(ApplicationId=app_id).get("Statements", [])
-        if _is_public(stmts):
-            exposed.append("SAR application " + app_id.split("/")[-1])
-    except Exception:
-        pass
+try:
+    stmts = sar.get_application_policy(ApplicationId=app_id).get("Statements", [])
+    if _is_public(stmts):
+        exposed.append("SAR application " + app_id.split("/")[-1])
+except ClientError as e:
+    if e.response.get("Error", {}).get("Code") not in NOT_FOUND:
+        raise
 
-topic = seed.get("sns_topic_arn")
-if topic:
-    try:
-        doc = sns.get_topic_attributes(TopicArn=topic)["Attributes"].get("Policy")
-        if doc and _is_public(json.loads(doc).get("Statement", [])):
-            exposed.append("SNS topic " + topic.split(":")[-1])
-    except Exception:
-        pass
+try:
+    doc = sns.get_topic_attributes(TopicArn=topic)["Attributes"].get("Policy")
+    if doc and _is_public(json.loads(doc).get("Statement", [])):
+        exposed.append("SNS topic " + topic.split(":")[-1])
+except ClientError as e:
+    if e.response.get("Error", {}).get("Code") not in NOT_FOUND:
+        raise
 
 ck.require(
     not exposed,

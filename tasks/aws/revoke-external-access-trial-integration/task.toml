@@ -12,12 +12,14 @@ policy; only a separate policy call does.
 outcome_description = """
 Only this account can reach the trial integration's resources. The grader only looks for
 unconditioned wildcard Allow statements on the seeded SNS topic and SAR application. It
-does not reject explicit external-account grants or validate conditions, and it skips a
-resource whose identifier is missing or whose policy cannot be read.
+does not reject explicit external-account grants or validate conditions. A deleted resource
+counts as not shared. A missing identifier or any other read error is an evaluation error.
 """
 criteria_descriptions = [
-  "the seeded Serverless Application Repository application's policy has no unconditioned Allow for the wildcard principal (skipped if the identifier is missing or the read fails)",
-  "the seeded SNS topic's policy has no unconditioned Allow for the wildcard principal (skipped if the identifier is missing or the read fails)",
+  "the seed state names both the SNS topic and the Serverless Application Repository application; if not, the run is an evaluation error",
+  "the seeded Serverless Application Repository application's policy has no unconditioned Allow for the wildcard principal; a deleted application counts as not shared",
+  "the seeded SNS topic's policy has no unconditioned Allow for the wildcard principal; a deleted topic counts as not shared",
+  "any other error reading either policy is an evaluation error",
 ]
 keywords = ["aws", "sns", "serverlessrepo", "security", "public-access"]
 extra_tools = []
