@@ -1,3 +1,4 @@
+from botocore.exceptions import ClientError
 import checkkit as ck
 
 seed = ck.seed()
@@ -11,12 +12,26 @@ shared_rds_sg_id = seed["shared_rds_sg_id"]
 prod_vpc_cidr = "10.0.0.0/16"
 shared_vpc_cidr = "172.16.0.0/16"
 
-peering = ec2.describe_vpc_peering_connections(
-    VpcPeeringConnectionIds=[peering_id])["VpcPeeringConnections"][0]
+
+def seeded(describe, key, label, **kwargs):
+    """Describe one resource setup created. A deleted one fails the run; other errors raise."""
+    try:
+        items = describe(**kwargs)[key]
+    except ClientError as e:
+        if not e.response.get("Error", {}).get("Code", "").endswith(".NotFound"):
+            raise
+        items = []
+    ck.require(items, f"{label} no longer exists")
+    return items[0]
+
+
+peering = seeded(ec2.describe_vpc_peering_connections, "VpcPeeringConnections",
+                 f"VPC peering connection {peering_id}", VpcPeeringConnectionIds=[peering_id])
 ck.require(peering["Status"]["Code"] == "active",
            f"VPC peering connection {peering_id} is no longer active")
 
-prod_rt = ec2.describe_route_tables(RouteTableIds=[prod_rt_id])["RouteTables"][0]
+prod_rt = seeded(ec2.describe_route_tables, "RouteTables", f"prod-custom-rt ({prod_rt_id})",
+                 RouteTableIds=[prod_rt_id])
 prod_has_route = any(
     r.get("DestinationCidrBlock") == shared_vpc_cidr
     and r.get("VpcPeeringConnectionId") == peering_id
@@ -27,7 +42,8 @@ ck.require(prod_has_route,
            f"prod-custom-rt ({prod_rt_id}) has no active route to {shared_vpc_cidr} via "
            f"peering {peering_id} - prod instances cannot reach shared-vpc")
 
-shared_rt = ec2.describe_route_tables(RouteTableIds=[shared_rt_id])["RouteTables"][0]
+shared_rt = seeded(ec2.describe_route_tables, "RouteTables", f"shared-custom-rt ({shared_rt_id})",
+                   RouteTableIds=[shared_rt_id])
 shared_has_route = any(
     r.get("DestinationCidrBlock") == prod_vpc_cidr
     and r.get("VpcPeeringConnectionId") == peering_id
@@ -38,7 +54,8 @@ ck.require(shared_has_route,
            f"shared-custom-rt ({shared_rt_id}) has no active route to {prod_vpc_cidr} via "
            f"peering {peering_id} - shared-vpc cannot reply to prod instances")
 
-rds_sg = ec2.describe_security_groups(GroupIds=[shared_rds_sg_id])["SecurityGroups"][0]
+rds_sg = seeded(ec2.describe_security_groups, "SecurityGroups", f"shared-rds-sg ({shared_rds_sg_id})",
+                GroupIds=[shared_rds_sg_id])
 
 
 def allows_5432(sg):

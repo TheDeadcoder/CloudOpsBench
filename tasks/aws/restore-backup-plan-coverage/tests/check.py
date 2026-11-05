@@ -64,12 +64,19 @@ ck.require(selections,
 
 
 def tags_of(arn):
-    if ":dynamodb:" in arn:
-        return {t["Key"]: t["Value"]
-                for t in ddb.list_tags_of_resource(ResourceArn=arn).get("Tags", [])}
-    if ":elasticfilesystem:" in arn:
-        return {t["Key"]: t["Value"] for t in efs.list_tags_for_resource(
-            ResourceId=arn.rsplit("/", 1)[-1]).get("Tags", [])}
+    try:
+        if ":dynamodb:" in arn:
+            return {t["Key"]: t["Value"]
+                    for t in ddb.list_tags_of_resource(ResourceArn=arn).get("Tags", [])}
+        if ":elasticfilesystem:" in arn:
+            return {t["Key"]: t["Value"] for t in efs.list_tags_for_resource(
+                ResourceId=arn.rsplit("/", 1)[-1]).get("Tags", [])}
+    except botocore.exceptions.ClientError as e:
+        if e.response["Error"]["Code"] in ("ResourceNotFoundException", "FileSystemNotFound"):
+            ck.fail(f"{label(arn)}, a fleet resource seeded for this task, is gone at grading "
+                    f"time ({err(e)}); requirement 3 is that the resources that exist now stay "
+                    f"in place, not deleted and recreated")
+        raise
     if arn.startswith("arn:aws:s3:::"):
         try:
             return {t["Key"]: t["Value"] for t in
@@ -269,14 +276,18 @@ try:
                 for n in (s["table_orders"], s["table_audit"])}
     efs.describe_file_systems(FileSystemId=s["fs_id"])
     efs.describe_file_systems(FileSystemId=s["fs2_id"])
-    live_scratch = [b["CreationDate"].isoformat() for b in s3.list_buckets()["Buckets"]
-                    if b["Name"] == s["scratch_bucket"]][0]
+    live_scratch = next((b["CreationDate"].isoformat() for b in s3.list_buckets()["Buckets"]
+                         if b["Name"] == s["scratch_bucket"]), None)
     live_vault = backup.describe_backup_vault(
         BackupVaultName=VAULT)["CreationDate"].isoformat()
 except botocore.exceptions.ClientError as e:
     ck.fail(f"a fleet resource seeded for this task is gone at grading time ({err(e)}); "
             f"requirement 3 is that the resources that exist now stay in place, not "
             f"deleted and recreated")
+ck.require(live_scratch,
+           f"the bucket {s['scratch_bucket']} seeded for this task is gone at grading time; "
+           f"requirement 3 is that the resources that exist now stay in place, not deleted "
+           f"and recreated")
 
 for name, seeded_id in s["table_ids"].items():
     ck.require(live_ids[name] == seeded_id,

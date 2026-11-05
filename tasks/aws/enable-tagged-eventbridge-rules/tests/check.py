@@ -1,5 +1,6 @@
 """Check that every EventBridge rule tagged App=intake is enabled and no other rule changed."""
 import boto3
+from botocore.exceptions import ClientError
 import checkkit as ck
 
 seed = ck.seed()
@@ -23,6 +24,16 @@ def bus_kw(bus):
     if bus and bus != "default":
         return {"EventBusName": bus}
     return {}
+
+
+def describe_seeded(ev, name, bus, missing):
+    """Describe a rule setup created. A deleted rule fails the run; other errors raise."""
+    try:
+        return ev.describe_rule(Name=name, **bus_kw(bus))
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+            ck.fail(f"{missing}: {name}")
+        raise
 
 
 def list_buses(ev):
@@ -71,7 +82,7 @@ for item in intake:
     name = item["name"]
     bus = item.get("bus") or "default"
     ev = client(region)
-    desc = ev.describe_rule(Name=name, **bus_kw(bus))
+    desc = describe_seeded(ev, name, bus, "missing intake rule")
     ck.require(desc.get("Name") == name, "missing intake rule")
     ck.require((desc.get("State") or "") == "ENABLED", "an intake rule is not enabled")
     arn = desc.get("Arn")
@@ -79,7 +90,7 @@ for item in intake:
     seen.add((region, bus, name))
 
 dev = client(decoy["region"])
-dd = dev.describe_rule(Name=decoy["name"], **bus_kw(decoy.get("bus") or "default"))
+dd = describe_seeded(dev, decoy["name"], decoy.get("bus") or "default", "decoy rule missing")
 ck.require(dd.get("Name") == decoy["name"], "decoy rule missing")
 ck.require((dd.get("State") or "") == "DISABLED", "a non-intake rule was changed")
 
@@ -115,7 +126,7 @@ for item in others:
     name = item["name"]
     bus = item.get("bus") or "default"
     ev = client(region)
-    desc = ev.describe_rule(Name=name, **bus_kw(bus))
+    desc = describe_seeded(ev, name, bus, "a non-intake rule is missing")
     ck.require(desc.get("Name") == name, "a non-intake rule is missing")
     ck.require((desc.get("State") or "") == (item.get("state") or ""), "a non-intake rule was changed")
 
